@@ -162,7 +162,7 @@ clickup task search [--space ID] [--folder ID] [--list ID] [--status S] [--assig
 # CRUD
 clickup task get <ID> [--subtasks] [--custom-task-id]
 clickup task create --list <ID> --name NAME [--description TEXT] [--status S] [--priority 1-4] [--assignee ID] [--tag NAME] [--due-date DATE] [--parent TASK_ID]
-clickup task update <ID> [--name X] [--status X] [--priority N] [--add-assignee ID] [--rem-assignee ID] [--description TEXT]
+clickup task update <ID> [--name X] [--status X] [--priority N] [--add-assignee ID] [--rem-assignee ID] [--description TEXT] [--due-date DATE]
 clickup task delete <ID>
 
 # Relationships and tags

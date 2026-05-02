@@ -117,6 +117,9 @@ pub enum TaskCommands {
         /// New description
         #[arg(long)]
         description: Option<String>,
+        /// New due date (YYYY-MM-DD)
+        #[arg(long)]
+        due_date: Option<String>,
         /// New time estimate in milliseconds
         #[arg(long)]
         time_estimate: Option<u64>,
@@ -453,6 +456,7 @@ pub async fn execute(command: TaskCommands, cli: &Cli) -> Result<(), CliError> {
             add_assignee,
             rem_assignee,
             description,
+            due_date,
             time_estimate,
         } => {
             let task = git::require_task(cli, id.as_deref(), true)?;
@@ -468,6 +472,12 @@ pub async fn execute(command: TaskCommands, cli: &Cli) -> Result<(), CliError> {
             }
             if let Some(d) = description {
                 body.insert("description".into(), serde_json::Value::String(d));
+            }
+            if let Some(d) = due_date {
+                body.insert(
+                    "due_date".into(),
+                    serde_json::Value::String(date_to_ms(&d)?),
+                );
             }
             if let Some(te) = time_estimate {
                 body.insert("time_estimate".into(), serde_json::json!(te));
