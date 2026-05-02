@@ -117,6 +117,9 @@ pub enum TaskCommands {
         /// New description
         #[arg(long)]
         description: Option<String>,
+        /// New due date (YYYY-MM-DD)
+        #[arg(long)]
+        due_date: Option<String>,
     },
     /// Delete a task (explicit ID required — never auto-detects from branch)
     Delete {
@@ -448,6 +451,7 @@ pub async fn execute(command: TaskCommands, cli: &Cli) -> Result<(), CliError> {
             add_assignee,
             rem_assignee,
             description,
+            due_date,
         } => {
             let task = git::require_task(cli, id.as_deref(), true)?;
             let mut body = serde_json::Map::new();
@@ -462,6 +466,12 @@ pub async fn execute(command: TaskCommands, cli: &Cli) -> Result<(), CliError> {
             }
             if let Some(d) = description {
                 body.insert("description".into(), serde_json::Value::String(d));
+            }
+            if let Some(d) = due_date {
+                body.insert(
+                    "due_date".into(),
+                    serde_json::Value::String(date_to_ms(&d)?),
+                );
             }
             // Assignee add/remove uses nested object
             if add_assignee.is_some() || rem_assignee.is_some() {

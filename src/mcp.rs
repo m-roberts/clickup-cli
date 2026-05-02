@@ -172,7 +172,7 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "clickup_task_update",
-            "description": "Update fields on an existing ClickUp task — name, description, status, priority, and incrementally add/remove assignees. Only provided fields are changed; omitted fields keep their current value. For tags use clickup_task_add_tag/remove_tag; for moving between lists use clickup_task_move. Returns the updated task object.",
+            "description": "Update fields on an existing ClickUp task — name, description, due date, status, priority, and incrementally add/remove assignees. Only provided fields are changed; omitted fields keep their current value. For tags use clickup_task_add_tag/remove_tag; for moving between lists use clickup_task_move. Returns the updated task object.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -181,6 +181,7 @@ pub fn tool_list() -> Value {
                     "status": {"type": "string", "description": "New status name (case-sensitive, must match a status defined on the parent list). Omit to keep current status."},
                     "priority": {"type": "integer", "description": "New priority: 1=Urgent, 2=High, 3=Normal, 4=Low. Omit to keep current priority."},
                     "description": {"type": "string", "description": "New task body — replaces the current description entirely. Markdown supported. Omit to keep current description."},
+                    "due_date": {"type": "integer", "description": "New due date as a Unix timestamp in milliseconds (e.g. 1735689600000 for 2025-01-01). Omit to keep the current due date."},
                     "add_assignees": {
                         "type": "array",
                         "items": {"type": "integer"},
@@ -2226,6 +2227,9 @@ async fn dispatch_tool(
             }
             if let Some(desc) = args.get("description").and_then(|v| v.as_str()) {
                 body["description"] = json!(desc);
+            }
+            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_i64()) {
+                body["due_date"] = json!(due_date);
             }
             if let Some(add) = args.get("add_assignees") {
                 body["assignees"] = json!({"add": add, "rem": args.get("rem_assignees").cloned().unwrap_or(json!([]))});
@@ -4913,4 +4917,53 @@ pub async fn serve(filter: filter::Filter) -> Result<(), Box<dyn std::error::Err
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dispatch_tool;
+    use crate::client::ClickUpClient;
+    use serde_json::json;
+    use wiremock::matchers::{body_json, method, path as path_matcher};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn task_update_supports_due_date() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("PUT"))
+            .and(path_matcher("/v2/task/abc123"))
+            .and(body_json(json!({
+                "due_date": 1735689600000_i64
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "abc123",
+                "name": "Test",
+                "due_date": "1735689600000"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = ClickUpClient::new("pk_test", 30)
+            .unwrap()
+            .with_base_url(&server.uri());
+        let result = dispatch_tool(
+            "clickup_task_update",
+            &json!({
+                "task_id": "abc123",
+                "due_date": 1735689600000_i64
+            }),
+            &client,
+            &None,
+        )
+        .await
+        .expect("update should succeed");
+
+        let items = result
+            .as_array()
+            .expect("dispatch should return a compact array");
+        assert_eq!(items[0]["id"], json!("abc123"));
+        assert_eq!(items[0]["due_date"], json!("2025-01-01"));
+    }
 }
