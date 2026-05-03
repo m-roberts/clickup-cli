@@ -1,6 +1,7 @@
 use crate::client::ClickUpClient;
 use crate::commands::auth::resolve_token;
 use crate::commands::workspace::resolve_workspace;
+use crate::date::parse_due_date;
 use crate::error::CliError;
 use crate::git;
 use crate::output::OutputConfig;
@@ -88,7 +89,7 @@ pub enum TaskCommands {
         /// Tag name
         #[arg(long)]
         tag: Option<Vec<String>>,
-        /// Due date (YYYY-MM-DD)
+        /// Due date (YYYY-MM-DD or RFC3339 datetime)
         #[arg(long)]
         due_date: Option<String>,
         /// Parent task ID (creates subtask)
@@ -117,7 +118,7 @@ pub enum TaskCommands {
         /// New description
         #[arg(long)]
         description: Option<String>,
-        /// New due date (YYYY-MM-DD)
+        /// New due date (YYYY-MM-DD or RFC3339 datetime)
         #[arg(long)]
         due_date: Option<String>,
     },
@@ -432,7 +433,9 @@ pub async fn execute(command: TaskCommands, cli: &Cli) -> Result<(), CliError> {
                 body["tags"] = serde_json::json!(tags);
             }
             if let Some(d) = due_date {
-                body["due_date"] = serde_json::Value::String(date_to_ms(&d)?);
+                let due_date = parse_due_date(&d)?;
+                body["due_date"] = serde_json::Value::String(due_date.milliseconds);
+                body["due_date_time"] = serde_json::Value::Bool(due_date.has_time);
             }
             if let Some(p) = parent {
                 body["parent"] = serde_json::Value::String(p);
@@ -468,9 +471,14 @@ pub async fn execute(command: TaskCommands, cli: &Cli) -> Result<(), CliError> {
                 body.insert("description".into(), serde_json::Value::String(d));
             }
             if let Some(d) = due_date {
+                let due_date = parse_due_date(&d)?;
                 body.insert(
                     "due_date".into(),
-                    serde_json::Value::String(date_to_ms(&d)?),
+                    serde_json::Value::String(due_date.milliseconds),
+                );
+                body.insert(
+                    "due_date_time".into(),
+                    serde_json::Value::Bool(due_date.has_time),
                 );
             }
             // Assignee add/remove uses nested object
@@ -751,15 +759,4 @@ fn resolve_task_tag(
             Ok((task, task_or_tag))
         }
     }
-}
-
-fn date_to_ms(date_str: &str) -> Result<String, CliError> {
-    let naive = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|_| {
-        CliError::ClientError {
-            message: format!("Invalid date '{}'. Use YYYY-MM-DD format.", date_str),
-            status: 0,
-        }
-    })?;
-    let dt = naive.and_hms_opt(0, 0, 0).unwrap().and_utc();
-    Ok((dt.timestamp_millis()).to_string())
 }
