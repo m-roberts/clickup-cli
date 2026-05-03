@@ -1,4 +1,4 @@
-use clickup_cli::output::{flatten_value, OutputConfig};
+use clickup_cli::output::{flatten_item_field, flatten_value, OutputConfig};
 use serde_json::json;
 
 #[test]
@@ -77,6 +77,27 @@ fn test_flatten_due_date_ms_timestamp() {
     let val = json!("1773705600000");
     let result = flatten_value(Some(&val));
     assert_eq!(result, "2026-03-17", "Expected 2026-03-17, got: {}", result);
+}
+
+#[test]
+fn test_flatten_due_date_with_time_preserves_time() {
+    let val = json!({
+        "due_date": "1735689600000",
+        "due_date_time": true
+    });
+    assert_eq!(
+        flatten_item_field(&val, "due_date"),
+        "2025-01-01T00:00:00.000Z"
+    );
+}
+
+#[test]
+fn test_flatten_due_date_without_time_stays_date_only() {
+    let val = json!({
+        "due_date": "1735689600000",
+        "due_date_time": false
+    });
+    assert_eq!(flatten_item_field(&val, "due_date"), "2025-01-01");
 }
 
 #[test]

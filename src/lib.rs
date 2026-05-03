@@ -2,6 +2,7 @@
 pub mod client;
 pub mod commands;
 pub mod config;
+pub mod date;
 pub mod error;
 pub mod git;
 pub mod mcp;

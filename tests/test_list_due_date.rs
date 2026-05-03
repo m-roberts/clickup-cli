@@ -23,51 +23,22 @@ fn rfc3339_to_ms(input: &str) -> String {
 }
 
 #[tokio::test]
-async fn test_task_update_due_date() {
+async fn test_list_create_due_date() {
     let dir = TempDir::new().unwrap();
     let server = MockServer::start().await;
-
-    Mock::given(method("PUT"))
-        .and(path_matcher("/v2/task/abc123"))
-        .and(body_json(serde_json::json!({
-            "due_date": "1735689600000",
-            "due_date_time": false
-        })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "abc123",
-            "name": "Test",
-            "due_date": "1735689600000",
-            "due_date_time": false
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    clickup(dir.path(), &server)
-        .args(["task", "update", "abc123", "--due-date", "2025-01-01"])
-        .assert()
-        .success();
-}
-
-#[tokio::test]
-async fn test_task_create_due_datetime() {
-    let dir = TempDir::new().unwrap();
-    let server = MockServer::start().await;
-    let due_date = "2025-01-01T12:34:56Z";
-    let due_date_ms = rfc3339_to_ms(due_date);
 
     Mock::given(method("POST"))
-        .and(path_matcher("/v2/list/list123/task"))
+        .and(path_matcher("/v2/folder/folder123/list"))
         .and(body_json(serde_json::json!({
-            "name": "Task",
-            "due_date": due_date_ms,
-            "due_date_time": true
+            "name": "List",
+            "due_date": "1735689600000",
+            "due_date_time": false
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "abc123",
-            "name": "Task",
-            "due_date": due_date_ms,
-            "due_date_time": true
+            "id": "list123",
+            "name": "List",
+            "due_date": "1735689600000",
+            "due_date_time": false
         })))
         .expect(1)
         .mount(&server)
@@ -75,15 +46,44 @@ async fn test_task_create_due_datetime() {
 
     clickup(dir.path(), &server)
         .args([
-            "task",
+            "list",
             "create",
-            "--list",
-            "list123",
+            "--folder",
+            "folder123",
             "--name",
-            "Task",
+            "List",
             "--due-date",
-            due_date,
+            "2025-01-01",
         ])
+        .assert()
+        .success();
+}
+
+#[tokio::test]
+async fn test_list_update_due_datetime() {
+    let dir = TempDir::new().unwrap();
+    let server = MockServer::start().await;
+    let due_date = "2025-01-01T12:34:56Z";
+    let due_date_ms = rfc3339_to_ms(due_date);
+
+    Mock::given(method("PUT"))
+        .and(path_matcher("/v2/list/list123"))
+        .and(body_json(serde_json::json!({
+            "due_date": due_date_ms,
+            "due_date_time": true
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "list123",
+            "name": "List",
+            "due_date": due_date_ms,
+            "due_date_time": true
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    clickup(dir.path(), &server)
+        .args(["list", "update", "list123", "--due-date", due_date])
         .assert()
         .success();
 }

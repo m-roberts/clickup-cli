@@ -1,5 +1,6 @@
 use crate::client::ClickUpClient;
 use crate::commands::auth::resolve_token;
+use crate::date::parse_due_date;
 use crate::error::CliError;
 use crate::output::OutputConfig;
 use crate::Cli;
@@ -55,6 +56,9 @@ pub enum ListCommands {
         /// New content
         #[arg(long)]
         content: Option<String>,
+        /// New due date (YYYY-MM-DD or RFC3339 datetime)
+        #[arg(long)]
+        due_date: Option<String>,
     },
     /// Delete a list
     Delete {
@@ -139,19 +143,37 @@ pub async fn execute(command: ListCommands, cli: &Cli) -> Result<(), CliError> {
                 body["priority"] = serde_json::json!(p);
             }
             if let Some(d) = due_date {
-                body["due_date"] = serde_json::Value::String(date_to_ms(&d)?);
+                let due_date = parse_due_date(&d)?;
+                body["due_date"] = serde_json::Value::String(due_date.milliseconds);
+                body["due_date_time"] = serde_json::Value::Bool(due_date.has_time);
             }
             let resp = client.post(&path, &body).await?;
             output.print_single(&resp, default_fields, "id");
             Ok(())
         }
-        ListCommands::Update { id, name, content } => {
+        ListCommands::Update {
+            id,
+            name,
+            content,
+            due_date,
+        } => {
             let mut body = serde_json::Map::new();
             if let Some(n) = name {
                 body.insert("name".into(), serde_json::Value::String(n));
             }
             if let Some(c) = content {
                 body.insert("content".into(), serde_json::Value::String(c));
+            }
+            if let Some(d) = due_date {
+                let due_date = parse_due_date(&d)?;
+                body.insert(
+                    "due_date".into(),
+                    serde_json::Value::String(due_date.milliseconds),
+                );
+                body.insert(
+                    "due_date_time".into(),
+                    serde_json::Value::Bool(due_date.has_time),
+                );
             }
             let resp = client
                 .put(
@@ -185,15 +207,4 @@ pub async fn execute(command: ListCommands, cli: &Cli) -> Result<(), CliError> {
             Ok(())
         }
     }
-}
-
-fn date_to_ms(date_str: &str) -> Result<String, CliError> {
-    let naive = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|_| {
-        CliError::ClientError {
-            message: format!("Invalid date '{}'. Use YYYY-MM-DD format.", date_str),
-            status: 0,
-        }
-    })?;
-    let dt = naive.and_hms_opt(0, 0, 0).unwrap().and_utc();
-    Ok((dt.timestamp_millis()).to_string())
 }

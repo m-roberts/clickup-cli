@@ -1,6 +1,7 @@
 use crate::client::ClickUpClient;
 use crate::commands::auth::resolve_token;
 use crate::commands::workspace::resolve_workspace;
+use crate::date::date_to_ms;
 use crate::error::CliError;
 use crate::output::OutputConfig;
 use crate::Cli;
@@ -24,7 +25,7 @@ pub enum GoalCommands {
         /// Goal name
         #[arg(long)]
         name: String,
-        /// Due date (Unix ms)
+        /// Due date (YYYY-MM-DD)
         #[arg(long)]
         due_date: String,
         /// Description
@@ -44,7 +45,7 @@ pub enum GoalCommands {
         /// New name
         #[arg(long)]
         name: Option<String>,
-        /// New due date (Unix ms)
+        /// New due date (YYYY-MM-DD)
         #[arg(long)]
         due_date: Option<String>,
         /// New description
@@ -146,9 +147,9 @@ pub async fn execute(command: GoalCommands, cli: &Cli) -> Result<(), CliError> {
             let ws_id = resolve_workspace(cli)?;
             let mut body = serde_json::json!({
                 "name": name,
-                "due_date": due_date,
                 "description": description,
             });
+            body["due_date"] = serde_json::Value::String(date_to_ms(&due_date)?);
             if let Some(c) = color {
                 body["color"] = serde_json::Value::String(c);
             }
@@ -176,7 +177,10 @@ pub async fn execute(command: GoalCommands, cli: &Cli) -> Result<(), CliError> {
                 body.insert("name".into(), serde_json::Value::String(n));
             }
             if let Some(d) = due_date {
-                body.insert("due_date".into(), serde_json::Value::String(d));
+                body.insert(
+                    "due_date".into(),
+                    serde_json::Value::String(date_to_ms(&d)?),
+                );
             }
             if let Some(d) = description {
                 body.insert("description".into(), serde_json::Value::String(d));

@@ -1,3 +1,4 @@
+use crate::date::format_due_date_value;
 use chrono::DateTime;
 use comfy_table::{ContentArrangement, Table};
 
@@ -53,8 +54,10 @@ impl OutputConfig {
                     println!("{}", fields.join(","));
                 }
                 for item in items {
-                    let row: Vec<String> =
-                        fields.iter().map(|&f| flatten_value(item.get(f))).collect();
+                    let row: Vec<String> = fields
+                        .iter()
+                        .map(|&f| flatten_item_field(item, f))
+                        .collect();
                     println!("{}", row.join(","));
                 }
             }
@@ -66,8 +69,10 @@ impl OutputConfig {
                     table.set_header(fields.iter().map(|f| f.to_string()).collect::<Vec<_>>());
                 }
                 for item in items {
-                    let row: Vec<String> =
-                        fields.iter().map(|&f| flatten_value(item.get(f))).collect();
+                    let row: Vec<String> = fields
+                        .iter()
+                        .map(|&f| flatten_item_field(item, f))
+                        .collect();
                     table.add_row(row);
                 }
                 println!("{}", table);
@@ -96,7 +101,7 @@ pub fn compact_items(items: &[serde_json::Value], fields: &[&str]) -> serde_json
         .map(|item| {
             let mut obj = serde_json::Map::new();
             for &field in fields {
-                let val = flatten_value(item.get(field));
+                let val = flatten_item_field(item, field);
                 obj.insert(field.to_string(), serde_json::Value::String(val));
             }
             serde_json::Value::Object(obj)
@@ -156,4 +161,18 @@ pub fn flatten_value(value: Option<&serde_json::Value>) -> String {
             }
         }
     }
+}
+
+pub fn flatten_item_field(item: &serde_json::Value, field: &str) -> String {
+    if field == "due_date" {
+        let due_date_time = item
+            .get("due_date_time")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if let Some(value) = format_due_date_value(item.get(field), due_date_time) {
+            return value;
+        }
+    }
+
+    flatten_value(item.get(field))
 }

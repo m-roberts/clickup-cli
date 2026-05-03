@@ -1,5 +1,6 @@
 use crate::client::ClickUpClient;
 use crate::config::Config;
+use crate::date::{date_to_ms, parse_due_date};
 use crate::output::compact_items;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -165,7 +166,7 @@ pub fn tool_list() -> Value {
                         "items": {"type": "string"},
                         "description": "Tag names to apply. Tags must already exist in the parent space (use clickup_tag_list to see available tags or clickup_tag_create to add new ones)."
                     },
-                    "due_date": {"type": "integer", "description": "Due date as a Unix timestamp in milliseconds (e.g. 1735689600000 for 2025-01-01). Omit for no due date."}
+                    "due_date": {"type": "string", "description": "Due date in YYYY-MM-DD format, or RFC3339/ISO-8601 datetime for time-aware due dates. Omit for no due date."}
                 },
                 "required": ["list_id", "name"]
             }
@@ -181,7 +182,7 @@ pub fn tool_list() -> Value {
                     "status": {"type": "string", "description": "New status name (case-sensitive, must match a status defined on the parent list). Omit to keep current status."},
                     "priority": {"type": "integer", "description": "New priority: 1=Urgent, 2=High, 3=Normal, 4=Low. Omit to keep current priority."},
                     "description": {"type": "string", "description": "New task body — replaces the current description entirely. Markdown supported. Omit to keep current description."},
-                    "due_date": {"type": "integer", "description": "New due date as a Unix timestamp in milliseconds (e.g. 1735689600000 for 2025-01-01). Omit to keep the current due date."},
+                    "due_date": {"type": "string", "description": "New due date in YYYY-MM-DD format, or RFC3339/ISO-8601 datetime for time-aware due dates. Omit to keep the current due date."},
                     "add_assignees": {
                         "type": "array",
                         "items": {"type": "integer"},
@@ -191,8 +192,7 @@ pub fn tool_list() -> Value {
                         "type": "array",
                         "items": {"type": "integer"},
                         "description": "User IDs to remove from assignees (no-op if the user is not currently assigned)."
-                    },
-                    "time_estimate": {"type": "integer", "description": "New total time estimate in milliseconds. Omit to keep current estimate."}
+                    }
                 },
                 "required": ["task_id"]
             }
@@ -380,7 +380,7 @@ pub fn tool_list() -> Value {
                 "properties": {
                     "team_id": {"type": "string", "description": "Workspace (team) ID. Obtain from clickup_workspace_list (field: id). Omit to use the default workspace from config."},
                     "name": {"type": "string", "description": "Goal title (e.g. 'Q1 revenue target'). Required and non-empty."},
-                    "due_date": {"type": "integer", "description": "Target completion date as a Unix timestamp in milliseconds (e.g. 1735689600000 for 2025-01-01)."},
+                    "due_date": {"type": "string", "description": "Target completion date in YYYY-MM-DD format."},
                     "description": {"type": "string", "description": "Goal description / rationale. Markdown supported. Omit for no description."},
                     "owner_ids": {
                         "type": "array",
@@ -399,7 +399,7 @@ pub fn tool_list() -> Value {
                 "properties": {
                     "goal_id": {"type": "string", "description": "ID of the goal to update. Obtain from clickup_goal_list (field: id)."},
                     "name": {"type": "string", "description": "New goal title. Omit to keep current name."},
-                    "due_date": {"type": "integer", "description": "New due date as a Unix timestamp in milliseconds (e.g. 1735689600000 for 2025-01-01)."},
+                    "due_date": {"type": "string", "description": "New due date in YYYY-MM-DD format."},
                     "description": {"type": "string", "description": "New goal description. Markdown supported."}
                 },
                 "required": ["goal_id"]
@@ -653,7 +653,7 @@ pub fn tool_list() -> Value {
                     "space_id": {"type": "string", "description": "ID of the parent space — creates a folderless list attached directly to the space. Obtain from clickup_space_list (field: id). Mutually exclusive with folder_id."},
                     "name": {"type": "string", "description": "Display name for the list. Required and non-empty."},
                     "content": {"type": "string", "description": "List description shown at the top of the list. Markdown supported. Omit for no description."},
-                    "due_date": {"type": "integer", "description": "List-level due date as a Unix timestamp in milliseconds (e.g. 1735689600000 for 2025-01-01). Individual tasks retain their own due dates."},
+                    "due_date": {"type": "string", "description": "List-level due date in YYYY-MM-DD format, or RFC3339/ISO-8601 datetime for time-aware due dates. Individual tasks retain their own due dates."},
                     "status": {"type": "string", "description": "Default status for tasks added to this list. Must match a status name from the parent space's status set."}
                 },
                 "required": ["name"]
@@ -668,7 +668,7 @@ pub fn tool_list() -> Value {
                     "list_id": {"type": "string", "description": "ID of the list to update. Obtain from clickup_list_list (field: id)."},
                     "name": {"type": "string", "description": "New list name. Omit to keep current name."},
                     "content": {"type": "string", "description": "New description for the list. Markdown supported."},
-                    "due_date": {"type": "integer", "description": "List-level due date as a Unix timestamp in milliseconds. Individual tasks retain their own due dates."},
+                    "due_date": {"type": "string", "description": "List-level due date in YYYY-MM-DD format, or RFC3339/ISO-8601 datetime for time-aware due dates. Individual tasks retain their own due dates."},
                     "status": {"type": "string", "description": "Default status for tasks added to this list (must match an existing status name in the list's status set)."}
                 },
                 "required": ["list_id"]
@@ -1406,16 +1406,16 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "clickup_task_set_estimate",
-            "description": "Set a time estimate on a ClickUp task. If user_id is provided, sets a per-user estimate (additive, Business plan+). If user_id is omitted, sets the total task-level estimate (compatible with all plans). Estimates are in milliseconds.",
+            "description": "Set a per-user time estimate on a ClickUp task. Additive — other users' estimates are untouched. To replace all user estimates at once use clickup_task_replace_estimates instead. Estimates are used in workload views and reports. Returns the updated task estimate object.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "task_id": {"type": "string", "description": "ID of the task. Obtain from clickup_task_list (field: id)."},
                     "team_id": {"type": "string", "description": "Workspace (team) ID. Obtain from clickup_workspace_list (field: id). Omit to use the default workspace from config."},
-                    "user_id": {"type": "integer", "description": "Numeric ID of the user whose estimate to set. Omit to set task-level estimate."},
+                    "user_id": {"type": "integer", "description": "Numeric ID of the user whose estimate to set. Obtain from clickup_member_list."},
                     "time_estimate": {"type": "integer", "description": "Estimated effort in milliseconds (e.g. 3600000 = 1 hour, 28800000 = 8 hours)."}
                 },
-                "required": ["task_id", "time_estimate"]
+                "required": ["task_id", "user_id", "time_estimate"]
             }
         },
         {
@@ -2200,8 +2200,10 @@ async fn dispatch_tool(
             if let Some(tags) = args.get("tags") {
                 body["tags"] = tags.clone();
             }
-            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_i64()) {
-                body["due_date"] = json!(due_date);
+            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_str()) {
+                let due_date = parse_due_date(due_date).map_err(|e| e.to_string())?;
+                body["due_date"] = json!(due_date.milliseconds);
+                body["due_date_time"] = json!(due_date.has_time);
             }
             let path = format!("/v2/list/{}/task", list_id);
             let resp = client.post(&path, &body).await.map_err(|e| e.to_string())?;
@@ -2229,11 +2231,10 @@ async fn dispatch_tool(
             if let Some(desc) = args.get("description").and_then(|v| v.as_str()) {
                 body["description"] = json!(desc);
             }
-            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_i64()) {
-                body["due_date"] = json!(due_date);
-            }
-            if let Some(te) = args.get("time_estimate").and_then(|v| v.as_i64()) {
-                body["time_estimate"] = json!(te);
+            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_str()) {
+                let due_date = parse_due_date(due_date).map_err(|e| e.to_string())?;
+                body["due_date"] = json!(due_date.milliseconds);
+                body["due_date_time"] = json!(due_date.has_time);
             }
             if let Some(add) = args.get("add_assignees") {
                 body["assignees"] = json!({"add": add, "rem": args.get("rem_assignees").cloned().unwrap_or(json!([]))});
@@ -2500,8 +2501,8 @@ async fn dispatch_tool(
                 .and_then(|v| v.as_str())
                 .ok_or("Missing required parameter: name")?;
             let mut body = json!({"name": name});
-            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_i64()) {
-                body["due_date"] = json!(due_date);
+            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_str()) {
+                body["due_date"] = json!(date_to_ms(due_date).map_err(|e| e.to_string())?);
             }
             if let Some(desc) = args.get("description").and_then(|v| v.as_str()) {
                 body["description"] = json!(desc);
@@ -2524,8 +2525,8 @@ async fn dispatch_tool(
             if let Some(name) = args.get("name").and_then(|v| v.as_str()) {
                 body["name"] = json!(name);
             }
-            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_i64()) {
-                body["due_date"] = json!(due_date);
+            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_str()) {
+                body["due_date"] = json!(date_to_ms(due_date).map_err(|e| e.to_string())?);
             }
             if let Some(desc) = args.get("description").and_then(|v| v.as_str()) {
                 body["description"] = json!(desc);
@@ -2860,8 +2861,10 @@ async fn dispatch_tool(
             if let Some(content) = args.get("content").and_then(|v| v.as_str()) {
                 body["content"] = json!(content);
             }
-            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_i64()) {
-                body["due_date"] = json!(due_date);
+            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_str()) {
+                let due_date = parse_due_date(due_date).map_err(|e| e.to_string())?;
+                body["due_date"] = json!(due_date.milliseconds);
+                body["due_date_time"] = json!(due_date.has_time);
             }
             if let Some(status) = args.get("status").and_then(|v| v.as_str()) {
                 body["status"] = json!(status);
@@ -2889,8 +2892,10 @@ async fn dispatch_tool(
             if let Some(content) = args.get("content").and_then(|v| v.as_str()) {
                 body["content"] = json!(content);
             }
-            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_i64()) {
-                body["due_date"] = json!(due_date);
+            if let Some(due_date) = args.get("due_date").and_then(|v| v.as_str()) {
+                let due_date = parse_due_date(due_date).map_err(|e| e.to_string())?;
+                body["due_date"] = json!(due_date.milliseconds);
+                body["due_date_time"] = json!(due_date.has_time);
             }
             if let Some(status) = args.get("status").and_then(|v| v.as_str()) {
                 body["status"] = json!(status);
@@ -3986,36 +3991,31 @@ async fn dispatch_tool(
         }
 
         "clickup_task_set_estimate" => {
+            let team_id = resolve_workspace(args)?;
             let task_id = args
                 .get("task_id")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing required parameter: task_id")?;
-            let user_id = args.get("user_id").and_then(|v| v.as_i64());
+            let user_id = args
+                .get("user_id")
+                .and_then(|v| v.as_i64())
+                .ok_or("Missing required parameter: user_id")?;
             let time_estimate = args
                 .get("time_estimate")
                 .and_then(|v| v.as_i64())
                 .ok_or("Missing required parameter: time_estimate")?;
-
-            if let Some(user_id) = user_id {
-                let team_id = resolve_workspace(args)?;
-                let body = json!({"time_estimates": [{"user_id": user_id, "time_estimate": time_estimate}]});
-                client
-                    .patch(
-                        &format!(
-                            "/v3/workspaces/{}/tasks/{}/time_estimates_by_user",
-                            team_id, task_id
-                        ),
-                        &body,
-                    )
-                    .await
-                    .map_err(|e| e.to_string())?;
-            } else {
-                let body = json!({"time_estimate": time_estimate});
-                client
-                    .put(&format!("/v2/task/{}", task_id), &body)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
+            let body =
+                json!({"time_estimates": [{"user_id": user_id, "time_estimate": time_estimate}]});
+            client
+                .patch(
+                    &format!(
+                        "/v3/workspaces/{}/tasks/{}/time_estimates_by_user",
+                        team_id, task_id
+                    ),
+                    &body,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(json!({"message": format!("Time estimate set for task {}", task_id)}))
         }
 
@@ -4943,12 +4943,14 @@ mod tests {
         Mock::given(method("PUT"))
             .and(path_matcher("/v2/task/abc123"))
             .and(body_json(json!({
-                "due_date": 1735689600000_i64
+                "due_date": "1735689600000",
+                "due_date_time": false
             })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "id": "abc123",
                 "name": "Test",
-                "due_date": "1735689600000"
+                "due_date": "1735689600000",
+                "due_date_time": false
             })))
             .expect(1)
             .mount(&server)
@@ -4961,7 +4963,7 @@ mod tests {
             "clickup_task_update",
             &json!({
                 "task_id": "abc123",
-                "due_date": 1735689600000_i64
+                "due_date": "2025-01-01"
             }),
             &client,
             &None,
@@ -4974,5 +4976,115 @@ mod tests {
             .expect("dispatch should return a compact array");
         assert_eq!(items[0]["id"], json!("abc123"));
         assert_eq!(items[0]["due_date"], json!("2025-01-01"));
+    }
+
+    #[tokio::test]
+    async fn task_update_supports_due_date_time() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("PUT"))
+            .and(path_matcher("/v2/task/abc123"))
+            .and(body_json(json!({
+                "due_date": "1735734896000",
+                "due_date_time": true
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "abc123",
+                "name": "Test",
+                "due_date": "1735734896000",
+                "due_date_time": true
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = ClickUpClient::new("pk_test", 30)
+            .unwrap()
+            .with_base_url(&server.uri());
+        dispatch_tool(
+            "clickup_task_update",
+            &json!({
+                "task_id": "abc123",
+                "due_date": "2025-01-01T12:34:56Z"
+            }),
+            &client,
+            &None,
+        )
+        .await
+        .expect("update should succeed");
+    }
+
+    #[tokio::test]
+    async fn list_create_supports_due_date_time() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path_matcher("/v2/folder/folder123/list"))
+            .and(body_json(json!({
+                "name": "List",
+                "due_date": "1735734896000",
+                "due_date_time": true
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "list123",
+                "name": "List",
+                "due_date": "1735734896000",
+                "due_date_time": true
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = ClickUpClient::new("pk_test", 30)
+            .unwrap()
+            .with_base_url(&server.uri());
+        dispatch_tool(
+            "clickup_list_create",
+            &json!({
+                "folder_id": "folder123",
+                "name": "List",
+                "due_date": "2025-01-01T12:34:56Z"
+            }),
+            &client,
+            &None,
+        )
+        .await
+        .expect("create should succeed");
+    }
+
+    #[tokio::test]
+    async fn goal_update_supports_due_date() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("PUT"))
+            .and(path_matcher("/v2/goal/goal123"))
+            .and(body_json(json!({
+                "due_date": "1735689600000"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "goal": {
+                    "id": "goal123",
+                    "name": "Goal",
+                    "due_date": "1735689600000"
+                }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = ClickUpClient::new("pk_test", 30)
+            .unwrap()
+            .with_base_url(&server.uri());
+        dispatch_tool(
+            "clickup_goal_update",
+            &json!({
+                "goal_id": "goal123",
+                "due_date": "2025-01-01"
+            }),
+            &client,
+            &None,
+        )
+        .await
+        .expect("update should succeed");
     }
 }

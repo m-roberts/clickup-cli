@@ -133,9 +133,9 @@ clickup folder delete <ID>
 clickup list list --folder <ID> [--archived]
 clickup list list --space <ID> [--archived]    # folderless lists
 clickup list get <ID>
-clickup list create --folder <ID> --name NAME [--content TEXT] [--priority N] [--due-date DATE]
+clickup list create --folder <ID> --name NAME [--content TEXT] [--priority N] [--due-date DATE|DATETIME]
 clickup list create --space <ID> --name NAME   # folderless
-clickup list update <ID> [--name NAME] [--content TEXT]
+clickup list update <ID> [--name NAME] [--content TEXT] [--due-date DATE|DATETIME]
 clickup list delete <ID>
 clickup list add-task <LIST_ID> <TASK_ID>
 clickup list remove-task <LIST_ID> <TASK_ID>
@@ -161,8 +161,8 @@ clickup task search [--space ID] [--folder ID] [--list ID] [--status S] [--assig
 
 # CRUD
 clickup task get <ID> [--subtasks] [--custom-task-id]
-clickup task create --list <ID> --name NAME [--description TEXT] [--status S] [--priority 1-4] [--assignee ID] [--tag NAME] [--due-date DATE] [--parent TASK_ID]
-clickup task update <ID> [--name X] [--status X] [--priority N] [--add-assignee ID] [--rem-assignee ID] [--description TEXT] [--due-date DATE]
+clickup task create --list <ID> --name NAME [--description TEXT] [--status S] [--priority 1-4] [--assignee ID] [--tag NAME] [--due-date DATE|DATETIME] [--parent TASK_ID]
+clickup task update <ID> [--name X] [--status X] [--priority N] [--add-assignee ID] [--rem-assignee ID] [--description TEXT] [--due-date DATE|DATETIME]
 clickup task delete <ID>
 
 # Relationships and tags
@@ -190,7 +190,7 @@ clickup task replace-estimates <ID> --assignee USER_ID --time MS
 +-----------+-----------------------------------------+-------------+----------+-------------+------------+
 ```
 
-Priority values: 1=Urgent, 2=High, 3=Normal, 4=Low. Dates: YYYY-MM-DD format.
+Priority values: 1=Urgent, 2=High, 3=Normal, 4=Low. Task/list due dates accept `YYYY-MM-DD` or RFC3339 datetimes; goal due dates use `YYYY-MM-DD`.
 
 ---
 
